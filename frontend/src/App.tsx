@@ -543,21 +543,21 @@ const page: React.CSSProperties = {
 const headerBar: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 8,
-  padding: "6px 16px",
+  gap: 14,
+  padding: "12px 24px",
   background: "#1a1a2e",
   borderBottom: "1px solid #2a2a4a",
   flexShrink: 0,
 };
 
 const headerIcon: React.CSSProperties = {
-  width: 28,
-  height: 28,
-  borderRadius: 6,
+  width: 40,
+  height: 40,
+  borderRadius: 8,
 };
 
 const headerTitle: React.CSSProperties = {
-  fontSize: 15,
+  fontSize: 22,
   fontWeight: 700,
   color: "#e2e8f0",
   letterSpacing: "0.3px",
