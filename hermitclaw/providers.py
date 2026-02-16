@@ -88,6 +88,54 @@ def _translate_tools_for_completions(tools: list[dict]) -> list[dict]:
     return result
 
 
+def _translate_input_to_messages(input_list: list, instructions: str | None) -> list[dict]:
+    """Convert a Responses API input_list to Chat Completions messages.
+
+    Handles:
+    - Role-based dicts ({"role": ..., "content": ...}) pass through
+    - {"type": "function_call_output", ...} -> {"role": "tool", ...}
+    - Multimodal content: input_image -> image_url, input_text -> text
+    - Non-dict items (SDK objects from Responses API) are skipped
+    - Instructions become a system message at index 0
+    """
+    messages = []
+    if instructions:
+        messages.append({"role": "system", "content": instructions})
+
+    for item in input_list:
+        if not isinstance(item, dict):
+            continue
+
+        if item.get("type") == "function_call_output":
+            messages.append({
+                "role": "tool",
+                "tool_call_id": item["call_id"],
+                "content": item.get("output", ""),
+            })
+        elif "role" in item:
+            content = item.get("content")
+            if isinstance(content, list):
+                content = _translate_multimodal(content)
+            messages.append({**item, "content": content})
+
+    return messages
+
+
+def _translate_multimodal(content_parts: list[dict]) -> list[dict]:
+    """Convert Responses API multimodal content to Chat Completions format."""
+    result = []
+    for part in content_parts:
+        if not isinstance(part, dict):
+            continue
+        if part.get("type") == "input_image":
+            result.append({"type": "image_url", "image_url": {"url": part["image_url"]}})
+        elif part.get("type") == "input_text":
+            result.append({"type": "text", "text": part["text"]})
+        else:
+            result.append(part)
+    return result
+
+
 def _client() -> openai.OpenAI:
     return openai.OpenAI(api_key=config["api_key"])
 
