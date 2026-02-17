@@ -1,11 +1,12 @@
 """LLM provider routing — Responses API (OpenAI) or Chat Completions (everything else)."""
 
 import json
+import logging
 import os
 import openai
 from hermitclaw.config import config
 
-
+logger = logging.getLogger("hermitclaw.providers")
 TOOLS = [
     {
         "type": "function",
@@ -336,6 +337,30 @@ def _chat_responses(
     }
 
 
+def _summarize_messages_for_log(messages: list) -> list:
+    """Return a safe summary of messages for logging (truncate long content)."""
+    out = []
+    for m in messages:
+        role = m.get("role", "?")
+        content = m.get("content", "")
+        if isinstance(content, str) and len(content) > 80:
+            content = content[:80] + "..."
+        elif isinstance(content, list):
+            content = f"[{len(content)} parts]"
+        d = {"role": role, "content": str(content)[:100]}
+        if m.get("role") == "tool":
+            d["tool_name"] = m.get("tool_name", "?")
+            d["tool_call_id"] = (
+                m.get("tool_call_id", "?")[:20] if m.get("tool_call_id") else None
+            )
+        if m.get("role") == "assistant" and m.get("tool_calls"):
+            d["tool_calls"] = [
+                {"name": tc.get("function", {}).get("name")} for tc in m["tool_calls"]
+            ]
+        out.append(d)
+    return out
+
+
 def _chat_completions(
     input_list: list,
     tools: bool = True,
@@ -358,8 +383,29 @@ def _chat_completions(
         if completions_tools:
             kwargs["tools"] = completions_tools
 
-    response = _completions_client().chat.completions.create(**kwargs)
-    return _normalize_completions_response(response)
+    summary = _summarize_messages_for_log(messages)
+    logger.info(
+        "chat_completions request: model=%s provider=%s msg_count=%d summary=%s",
+        config["model"],
+        config["provider"],
+        len(messages),
+        json.dumps(summary, default=str),
+    )
+    try:
+        response = _completions_client().chat.completions.create(**kwargs)
+        return _normalize_completions_response(response)
+    except Exception as e:
+        err_detail = str(e)
+        body = ""
+        resp = getattr(e, "response", None)
+        if resp is not None and hasattr(resp, "text"):
+            body = resp.text[:500] if resp.text else ""
+        logger.error(
+            "chat_completions failed: %s | response_body=%s",
+            err_detail,
+            body or "(none)",
+        )
+        raise
 
 
 def chat(

@@ -723,13 +723,29 @@ class Brain:
                         "output": result,
                     }
                 )
+                logger.info(
+                    "tool_result appended: name=%s output_len=%d",
+                    tool_name,
+                    len(str(result)),
+                )
 
             try:
+                logger.info(
+                    "LLM follow-up call: input_items=%d (with tool result)",
+                    len(input_list),
+                )
                 response = await asyncio.to_thread(chat, input_list, True, instructions)
             except Exception as e:
                 # Transient 500s from Ollama/local models — retry once after a short delay
                 if "500" in str(e) or "Internal Server Error" in str(e):
-                    logger.warning(f"LLM returned 500, retrying once: {e}")
+                    resp_body = (
+                        getattr(getattr(e, "response", None), "text", None) or ""
+                    )
+                    logger.warning(
+                        "LLM 500, retrying: %s | body=%s",
+                        e,
+                        resp_body[:300] if resp_body else "(none)",
+                    )
                     await asyncio.sleep(2)
                     try:
                         response = await asyncio.to_thread(
