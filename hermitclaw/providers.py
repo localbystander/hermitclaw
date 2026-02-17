@@ -210,7 +210,12 @@ def _uses_responses_api() -> bool:
 
 def _completions_client() -> openai.OpenAI:
     """Create an OpenAI client configured for Chat Completions (with base_url)."""
-    kwargs = {"api_key": config["api_key"]}
+    api_key = config["api_key"]
+    if not api_key and config.get("base_url"):
+        # Ollama and similar local providers don't need a real key;
+        # the SDK requires something, so use a placeholder
+        api_key = "ollama"
+    kwargs = {"api_key": api_key}
     if config.get("base_url"):
         kwargs["base_url"] = config["base_url"]
     return openai.OpenAI(**kwargs)
