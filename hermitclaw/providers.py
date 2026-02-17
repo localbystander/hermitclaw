@@ -10,6 +10,10 @@ from hermitclaw.config import config
 
 logger = logging.getLogger("hermitclaw.providers")
 
+# Max chars of tool result content sent to the model.
+# Longer results are truncated to avoid hitting cloud API limits.
+MAX_TOOL_CONTENT = 4000
+
 
 def _log_error_response(response: httpx.Response) -> None:
     """Event hook: log 4xx/5xx response body immediately (before retries consume it)."""
@@ -204,9 +208,12 @@ def _translate_input_to_messages(
             continue
 
         if item.get("type") == "function_call_output":
+            content = str(item.get("output", ""))
+            if len(content) > MAX_TOOL_CONTENT:
+                content = content[:MAX_TOOL_CONTENT] + "\n...(truncated)"
             tool_msg = {
                 "role": "tool",
-                "content": str(item.get("output", "")),
+                "content": content,
             }
             # v1/chat/completions is OpenAI-compatible; use tool_call_id
             call_id = item.get("call_id")
@@ -420,14 +427,6 @@ def _chat_completions(
         len(messages),
         json.dumps(summary, default=str),
     )
-    # Dump full payload for debugging 500s
-    debug_path = os.path.join(os.getcwd(), "debug_last_request.json")
-    try:
-        with open(debug_path, "w") as f:
-            json.dump(kwargs, f, indent=2, default=str)
-        logger.info("Full request payload written to %s", debug_path)
-    except Exception as exc:
-        logger.warning("Could not write debug payload: %s", exc)
     try:
         response = _completions_client().chat.completions.create(**kwargs)
         return _normalize_completions_response(response)

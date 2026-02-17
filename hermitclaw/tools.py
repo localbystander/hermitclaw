@@ -328,7 +328,7 @@ def ollama_web_fetch(url: str) -> str:
         return f"Error: {e}"
 
 
-def fetch_url(url: str, max_chars: int = 50000, timeout: int = 15) -> str:
+def fetch_url(url: str, max_chars: int = 12000, timeout: int = 15) -> str:
     """Fetch a URL and return its content (for research). Runs in main process, not sandbox."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
