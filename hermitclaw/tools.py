@@ -84,6 +84,15 @@ def ensure_venv(env_root: str):
         subprocess.run(
             [sys.executable, "-m", "venv", venv], capture_output=True, timeout=30
         )
+    # Ensure 'python' exists (some venvs only have python3)
+    py_bin = os.path.join(venv, "bin")
+    python3_path = os.path.join(py_bin, "python3")
+    python_path = os.path.join(py_bin, "python")
+    if os.path.isfile(python3_path) and not os.path.isfile(python_path):
+        try:
+            os.symlink("python3", python_path)
+        except OSError:
+            pass
     logger.info("Crab venv created.")
 
 

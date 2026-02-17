@@ -133,7 +133,6 @@ def setup(env_root):
         "subprocess",
         "socket",
         "http",
-        "urllib.request",
         "ftplib",
         "smtplib",
         "ctypes",
@@ -142,6 +141,13 @@ def setup(env_root):
         "webbrowser",
     ):
         sys.modules[mod] = _blocked_module(mod)
+
+    # urllib.request: fake module. Must inject into urllib so "urllib.request" works.
+    _fake_request = _blocked_module("urllib.request")
+    sys.modules["urllib.request"] = _fake_request
+    import urllib
+
+    urllib.request = _fake_request
 
 
 if __name__ == "__main__":
