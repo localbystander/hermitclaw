@@ -187,6 +187,10 @@ class Brain:
         # Focus mode
         self._focus_mode: bool = False
 
+        # Research-to-output tracking — nudge the crab to write files
+        # after sustained research activity
+        self._consecutive_research_cycles: int = 0
+
         # Conversation state
         self._user_message: str | None = None
         self._conversation_event: asyncio.Event = asyncio.Event()
@@ -614,6 +618,22 @@ class Brain:
 
         parts = []
 
+        # Escalating nudge when researching without producing files
+        rc = self._consecutive_research_cycles
+        if rc >= 5:
+            parts.append(
+                "IMPORTANT: You've been researching for many cycles "
+                "without writing any files. STOP researching. Write up "
+                "what you've found NOW — save a report, summary, or "
+                "analysis to a file using a shell command."
+            )
+        elif rc >= 3:
+            parts.append(
+                "You've gathered good research material. Time to "
+                "write up your findings — save a report or summary "
+                "to a file (e.g. research/topic_name.md)."
+            )
+
         # Current focus (from planning)
         if self._current_focus:
             parts.append(f"Current focus: {self._current_focus}")
@@ -655,7 +675,10 @@ class Brain:
         instructions, input_list = self._build_input()
 
         try:
-            response = await asyncio.to_thread(chat, input_list, True, instructions)
+            max_tokens = config.get("max_output_tokens", 1000)
+            response = await asyncio.to_thread(
+                chat, input_list, True, instructions, max_tokens
+            )
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
             await self._emit("error", text=str(e))
@@ -674,6 +697,9 @@ class Brain:
                     "data": {"type": "searching", "detail": "Searching the web..."},
                 }
             )
+
+        pre_cycle_files = self._scan_env_files()
+        did_research = False
 
         max_tool_rounds = config.get("max_tool_rounds", 15)
         tool_round = 0
@@ -695,6 +721,9 @@ class Brain:
                 tool_name = tc["name"]
                 tool_args = tc["arguments"]
                 call_id = tc["call_id"]
+
+                if tool_name in ("web_search", "web_fetch", "fetch_url"):
+                    did_research = True
 
                 await self._emit("tool_call", tool=tool_name, args=tool_args)
 
@@ -744,7 +773,9 @@ class Brain:
                     "LLM follow-up call: input_items=%d (with tool result)",
                     len(input_list),
                 )
-                response = await asyncio.to_thread(chat, input_list, True, instructions)
+                response = await asyncio.to_thread(
+                    chat, input_list, True, instructions, max_tokens
+                )
             except Exception as e:
                 # Transient 500s from Ollama/local models — retry once after a short delay
                 if "500" in str(e) or "Internal Server Error" in str(e):
@@ -759,7 +790,7 @@ class Brain:
                     await asyncio.sleep(2)
                     try:
                         response = await asyncio.to_thread(
-                            chat, input_list, True, instructions
+                            chat, input_list, True, instructions, max_tokens
                         )
                     except Exception as e2:
                         logger.error(f"LLM follow-up call failed after retry: {e2}")
@@ -783,6 +814,19 @@ class Brain:
                         "data": {"type": "searching", "detail": "Searching the web..."},
                     }
                 )
+
+        # Track research-to-output ratio
+        post_cycle_files = self._scan_env_files()
+        created_files = post_cycle_files - pre_cycle_files
+        if created_files:
+            self._consecutive_research_cycles = 0
+            logger.info("Files created this cycle: %s", created_files)
+        elif did_research:
+            self._consecutive_research_cycles += 1
+            logger.info(
+                "Research cycle with no file output (%d consecutive)",
+                self._consecutive_research_cycles,
+            )
 
         if response.get("text"):
             self.thought_count += 1
